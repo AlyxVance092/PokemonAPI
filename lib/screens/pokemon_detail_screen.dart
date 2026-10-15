@@ -4,6 +4,7 @@ import '../models/pokemon_model.dart';
 import '../services/pokemon_service.dart';
 import '../widgets/pokemon_type_chip.dart';
 import '../widgets/stat_bar.dart';
+import '../widgets/pokeball_painter.dart';
 
 /// Pantalla de detalle de un Pokémon individual
 class PokemonDetailScreen extends StatefulWidget {
@@ -24,8 +25,11 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
+  late AnimationController _springController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  Animation<Offset>? _springAnimation;
+  Offset _pokemonOffset = Offset.zero;
 
   @override
   void initState() {
@@ -52,7 +56,38 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
       curve: Curves.easeOutCubic,
     ));
 
+    _springController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _springController.addListener(() {
+      if (mounted && _springAnimation != null) {
+        setState(() => _pokemonOffset = _springAnimation!.value);
+      }
+    });
+
     _fetchPokemon();
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    setState(() {
+      _pokemonOffset = Offset(
+        (_pokemonOffset.dx + details.delta.dx).clamp(-110.0, 110.0),
+        (_pokemonOffset.dy + details.delta.dy).clamp(-110.0, 110.0),
+      );
+    });
+  }
+
+  void _onPanEnd(DragEndDetails _) {
+    _springController.reset();
+    _springAnimation = Tween<Offset>(
+      begin: _pokemonOffset,
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _springController,
+      curve: Curves.elasticOut,
+    ));
+    _springController.forward();
   }
 
   Future<void> _fetchPokemon() async {
@@ -81,6 +116,7 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
+    _springController.dispose();
     super.dispose();
   }
 
@@ -151,15 +187,8 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(
-            width: 80,
-            height: 80,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B6B)),
-            ),
-          ),
-          const SizedBox(height: 24),
+          const SpinningPokeball(size: 90),
+          const SizedBox(height: 28),
           Text(
             'Cargando Pokémon...',
             style: GoogleFonts.outfit(
@@ -253,28 +282,42 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
 
   Widget _buildHeader(Pokemon pokemon) {
     final imageUrl = pokemon.sprites.officialArtwork ?? pokemon.sprites.frontDefault;
+    final typeColor = _getTypeColor(pokemon.types.first.name);
     return Stack(
       children: [
-        // Círculo decorativo de fondo
+        // Pokébola grande en la esquina superior derecha
         Positioned(
-          top: -40,
-          right: -40,
-          child: Container(
-            width: 250,
-            height: 250,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.05),
-            ),
+          top: -55,
+          right: -65,
+          child: DecorativePokeball(
+            size: 290,
+            color: Colors.white,
+            opacity: 0.06,
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
           child: Column(
             children: [
-              // Número y nombre
+              // Botón atrás + número del Pokémon
               Row(
                 children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white70,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Text(
                     '#${pokemon.id.toString().padLeft(3, '0')}',
                     style: GoogleFonts.outfit(
@@ -296,32 +339,64 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              // Imagen oficial del Pokémon
-              if (imageUrl != null)
-                Hero(
-                  tag: 'pokemon-${pokemon.id}',
-                  child: Image.network(
-                    imageUrl,
-                    height: 220,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (ctx, child, progress) {
-                      if (progress == null) return child;
-                      return SizedBox(
-                        height: 220,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: progress.expectedTotalBytes != null
-                                ? progress.cumulativeBytesLoaded /
-                                    progress.expectedTotalBytes!
-                                : null,
-                            color: Colors.white54,
+              // Imagen arrastrable sobre Pokébola decorativa
+              SizedBox(
+                height: 250,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Pokébola centrada detrás del Pokémon
+                    DecorativePokeball(
+                      size: 230,
+                      color: typeColor,
+                      opacity: 0.18,
+                    ),
+                    // Pokémon arrastrable con efecto 3D
+                    if (imageUrl != null)
+                      GestureDetector(
+                        onPanUpdate: _onPanUpdate,
+                        onPanEnd: _onPanEnd,
+                        child: Transform(
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.001)
+                            ..translate(_pokemonOffset.dx, _pokemonOffset.dy)
+                            ..rotateY(_pokemonOffset.dx * 0.007)
+                            ..rotateX(-_pokemonOffset.dy * 0.007),
+                          alignment: FractionalOffset.center,
+                          child: Hero(
+                            tag: 'pokemon-${pokemon.id}',
+                            child: Image.network(
+                              imageUrl,
+                              height: 220,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.catching_pokemon,
+                                size: 120,
+                                color: typeColor.withOpacity(0.5),
+                              ),
+                            ),
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                  ],
                 ),
-              const SizedBox(height: 20),
+              ),
+              // Hint de arrastre
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.open_with, size: 13, color: Colors.white24),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Arrástralo',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white24,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
             ],
           ),
         ),

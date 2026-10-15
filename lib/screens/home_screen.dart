@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/pokemon_model.dart';
 import '../services/pokemon_service.dart';
 import '../widgets/pokemon_card.dart';
+import '../widgets/pokeball_painter.dart';
 import 'pokemon_detail_screen.dart';
 
 /// Pantalla principal: explorador de Pokémon con búsqueda
@@ -258,15 +259,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(
-              width: 60,
-              height: 60,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(Color(0xFFFF6B6B)),
-              ),
-            ),
+            const SpinningPokeball(size: 80),
             const SizedBox(height: 20),
             Text(
               'Cargando Pokémon...',
@@ -345,13 +338,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               color: Colors.white.withOpacity(0.05),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(Color(0xFFFF6B6B)),
-              ),
-            ),
+            child: const Center(child: SpinningPokeball(size: 50)),
           );
         }
 

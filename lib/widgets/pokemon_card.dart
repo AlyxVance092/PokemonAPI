@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/pokemon_model.dart';
 import '../widgets/pokemon_type_chip.dart';
+import '../widgets/pokeball_painter.dart';
 
 /// Tarjeta de Pokémon en el grid con diseño glassmorphism premium
 class PokemonCard extends StatefulWidget {
@@ -111,17 +112,14 @@ class _PokemonCardState extends State<PokemonCard>
             ),
             child: Stack(
               children: [
-                // Círculo decorativo de fondo
+                // Pokébola decorativa de fondo
                 Positioned(
-                  right: -20,
-                  top: -20,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _primaryColor.withOpacity(0.12),
-                    ),
+                  right: -28,
+                  top: -28,
+                  child: DecorativePokeball(
+                    size: 140,
+                    color: _primaryColor,
+                    opacity: 0.22,
                   ),
                 ),
                 // Contenido de la tarjeta

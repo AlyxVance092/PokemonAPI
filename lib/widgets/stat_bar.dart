@@ -83,14 +83,21 @@ class _StatBarState extends State<StatBar> with SingleTickerProviderStateMixin {
         ),
         SizedBox(
           width: 40,
-          child: Text(
-            '${widget.stat.baseStat}',
-            textAlign: TextAlign.right,
-            style: GoogleFonts.outfit(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
+          child: TweenAnimationBuilder<int>(
+            tween: IntTween(begin: 0, end: widget.stat.baseStat),
+            duration: const Duration(milliseconds: 900),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, _) {
+              return Text(
+                '$value',
+                textAlign: TextAlign.right,
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(width: 12),
