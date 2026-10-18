@@ -3,6 +3,7 @@
 
 class Pokemon {
   final int id;
+  final int speciesId;
   final String name;
   final int height;
   final int weight;
@@ -10,10 +11,13 @@ class Pokemon {
   final List<PokemonType> types;
   final List<PokemonStat> stats;
   final List<PokemonAbility> abilities;
+  final List<PokemonMove> moves;
+  final bool movesLoaded;
   final PokemonSprites sprites;
 
   Pokemon({
     required this.id,
+    required this.speciesId,
     required this.name,
     required this.height,
     required this.weight,
@@ -21,13 +25,29 @@ class Pokemon {
     required this.types,
     required this.stats,
     required this.abilities,
+    this.moves = const [],
+    this.movesLoaded = false,
     required this.sprites,
   });
 
   /// Factory constructor: convierte un Map (JSON) en un objeto Pokemon
-  factory Pokemon.fromJson(Map<String, dynamic> json) {
+  factory Pokemon.fromJson(
+    Map<String, dynamic> json, {
+    bool includeMoves = false,
+  }) {
+    final species = json['species'] as Map<String, dynamic>?;
+    final speciesUrl = species?['url'] as String?;
+    final speciesId = speciesUrl == null
+        ? json['id'] as int
+        : int.parse(
+            Uri.parse(speciesUrl).pathSegments
+                .where((segment) => segment.isNotEmpty)
+                .last,
+          );
+
     return Pokemon(
       id: json['id'] as int,
+      speciesId: speciesId,
       name: (json['name'] as String).toUpperCase(),
       height: json['height'] as int,
       weight: json['weight'] as int,
@@ -41,8 +61,15 @@ class Pokemon {
       abilities: (json['abilities'] as List)
           .map((a) => PokemonAbility.fromJson(a as Map<String, dynamic>))
           .toList(),
-      sprites: PokemonSprites.fromJson(
-          json['sprites'] as Map<String, dynamic>),
+      moves: includeMoves
+          ? (json['moves'] as List? ?? const [])
+                .map(
+                  (move) => PokemonMove.fromJson(move as Map<String, dynamic>),
+                )
+                .toList()
+          : const [],
+      movesLoaded: includeMoves,
+      sprites: PokemonSprites.fromJson(json['sprites'] as Map<String, dynamic>),
     );
   }
 }
@@ -53,9 +80,7 @@ class PokemonType {
   PokemonType({required this.name});
 
   factory PokemonType.fromJson(Map<String, dynamic> json) {
-    return PokemonType(
-      name: json['type']['name'] as String,
-    );
+    return PokemonType(name: json['type']['name'] as String);
   }
 }
 
@@ -87,19 +112,57 @@ class PokemonAbility {
   }
 }
 
+class PokemonMove {
+  final String name;
+  final String url;
+
+  PokemonMove({required this.name, required this.url});
+
+  factory PokemonMove.fromJson(Map<String, dynamic> json) {
+    final move = json['move'] as Map<String, dynamic>;
+    return PokemonMove(
+      name: move['name'] as String,
+      url: move['url'] as String,
+    );
+  }
+}
+
 class PokemonSprites {
   final String? frontDefault;
+  final String? frontShiny;
   final String? officialArtwork;
+  final String? officialArtworkShiny;
+  final String? homeArtwork;
+  final String? homeArtworkShiny;
+  final String? animated;
+  final String? animatedShiny;
 
-  PokemonSprites({this.frontDefault, this.officialArtwork});
+  PokemonSprites({
+    this.frontDefault,
+    this.frontShiny,
+    this.officialArtwork,
+    this.officialArtworkShiny,
+    this.homeArtwork,
+    this.homeArtworkShiny,
+    this.animated,
+    this.animatedShiny,
+  });
 
   factory PokemonSprites.fromJson(Map<String, dynamic> json) {
     final other = json['other'] as Map<String, dynamic>?;
     final officialArt = other?['official-artwork'] as Map<String, dynamic>?;
+    final home = other?['home'] as Map<String, dynamic>?;
+    final showDown = other?['showdown'] as Map<String, dynamic>?;
 
     return PokemonSprites(
       frontDefault: json['front_default'] as String?,
+      frontShiny: json['front_shiny'] as String?,
       officialArtwork: officialArt?['front_default'] as String?,
+      officialArtworkShiny: officialArt?['front_shiny'] as String?,
+      homeArtwork: home?['front_default'] as String?,
+      homeArtworkShiny: home?['front_shiny'] as String?,
+      animated: showDown?['front_default'] as String?,
+      animatedShiny: showDown?['front_shiny'] as String?,
     );
   }
 }

@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../models/pokemon_model.dart';
 import '../widgets/pokemon_type_chip.dart';
 import '../widgets/pokeball_painter.dart';
+import '../widgets/animated_pokemon_sprite.dart';
 
 /// Tarjeta de Pokémon en el grid con diseño glassmorphism premium
 class PokemonCard extends StatefulWidget {
   final Pokemon pokemon;
   final VoidCallback onTap;
 
-  const PokemonCard({
-    super.key,
-    required this.pokemon,
-    required this.onTap,
-  });
+  const PokemonCard({super.key, required this.pokemon, required this.onTap});
 
   @override
   State<PokemonCard> createState() => _PokemonCardState();
@@ -23,6 +21,7 @@ class _PokemonCardState extends State<PokemonCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _hoverController;
   late Animation<double> _scaleAnimation;
+  late Animation<double> _glowAnimation;
   bool _isHovered = false;
 
   static const Map<String, Color> _typeColors = {
@@ -59,6 +58,9 @@ class _PokemonCardState extends State<PokemonCard>
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.97).animate(
       CurvedAnimation(parent: _hoverController, curve: Curves.easeInOut),
     );
+    _glowAnimation = Tween<double>(begin: 0.15, end: 0.5).animate(
+      CurvedAnimation(parent: _hoverController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -70,6 +72,7 @@ class _PokemonCardState extends State<PokemonCard>
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      onTap: widget.onTap,
       onTapDown: (_) {
         setState(() => _isHovered = true);
         _hoverController.forward();
@@ -77,125 +80,202 @@ class _PokemonCardState extends State<PokemonCard>
       onTapUp: (_) {
         setState(() => _isHovered = false);
         _hoverController.reverse();
-        widget.onTap();
       },
       onTapCancel: () {
         setState(() => _isHovered = false);
         _hoverController.reverse();
       },
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: Hero(
-          tag: 'pokemon-${widget.pokemon.id}',
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  _primaryColor.withOpacity(0.35),
-                  _primaryColor.withOpacity(0.08),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: _primaryColor.withOpacity(_isHovered ? 0.7 : 0.25),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: _primaryColor.withOpacity(_isHovered ? 0.35 : 0.15),
-                  blurRadius: _isHovered ? 20 : 12,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                // Pokébola decorativa de fondo
-                Positioned(
-                  right: -28,
-                  top: -28,
-                  child: DecorativePokeball(
-                    size: 140,
-                    color: _primaryColor,
-                    opacity: 0.22,
-                  ),
-                ),
-                // Contenido de la tarjeta
-                Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Número del Pokémon
-                      Text(
-                        '#${widget.pokemon.id.toString().padLeft(3, '0')}',
-                        style: GoogleFonts.outfit(
-                          color: Colors.white38,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      // Nombre
-                      Text(
-                        widget.pokemon.name,
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      // Tipos
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: widget.pokemon.types
-                            .map((t) => PokemonTypeChip.small(t.name))
-                            .toList(),
-                      ),
-                      const Spacer(),
-                      // Imagen centrada
-                      Center(
-                        child: _buildImage(),
-                      ),
+      child: AnimatedBuilder(
+        animation: _hoverController,
+        builder: (context, child) {
+          return ScaleTransition(
+            scale: _scaleAnimation,
+            child: Hero(
+              tag: 'pokemon-${widget.pokemon.id}',
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      _primaryColor.withOpacity(0.35),
+                      _primaryColor.withOpacity(0.08),
                     ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: _primaryColor.withOpacity(_isHovered ? 0.7 : 0.25),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _primaryColor.withOpacity(_glowAnimation.value),
+                      blurRadius: _isHovered ? 25 : 12,
+                      spreadRadius: _isHovered ? 2 : 0,
+                      offset: const Offset(0, 6),
+                    ),
+                    if (_isHovered)
+                      BoxShadow(
+                        color: _primaryColor.withOpacity(0.3),
+                        blurRadius: 15,
+                        spreadRadius: -5,
+                      ),
+                  ],
                 ),
-              ],
+                child: Stack(
+                  children: [
+                    // Pokébola decorativa de fondo
+                    Positioned(
+                      right: -28,
+                      top: -28,
+                      child: DecorativePokeball(
+                        size: 140,
+                        color: _primaryColor,
+                        opacity: 0.22,
+                      ),
+                    ),
+                    // Contenido de la tarjeta
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Número del Pokémon
+                          Text(
+                            '#${widget.pokemon.id.toString().padLeft(3, '0')}',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white38,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          // Nombre
+                          Text(
+                            widget.pokemon.name,
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          // Tipos
+                          Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: widget.pokemon.types
+                                .map((t) => PokemonTypeChip.small(t.name))
+                                .toList(),
+                          ),
+                          const Spacer(),
+                          // Imagen centrada
+                          Center(child: _buildImage()),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildImage() {
-    final imageUrl = widget.pokemon.sprites.officialArtwork ??
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final imageSize = screenWidth < 360
+        ? 72.0
+        : screenWidth < 720
+        ? 88.0
+        : 120.0;
+    final imageUrl =
+        widget.pokemon.sprites.homeArtwork ??
+        widget.pokemon.sprites.officialArtwork ??
         widget.pokemon.sprites.frontDefault;
+    final staticFallback = imageUrl == widget.pokemon.sprites.officialArtwork
+        ? widget.pokemon.sprites.frontDefault
+        : widget.pokemon.sprites.officialArtwork ??
+              widget.pokemon.sprites.frontDefault;
+    final animatedUrl = widget.pokemon.sprites.animated;
 
     if (imageUrl == null) {
       return Icon(
         Icons.catching_pokemon,
-        size: 80,
+        size: imageSize * 0.67,
         color: _primaryColor.withOpacity(0.5),
       );
     }
 
-    return Image.network(
-      imageUrl,
-      height: 100,
-      width: 100,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => Icon(
-        Icons.catching_pokemon,
-        size: 80,
-        color: _primaryColor.withOpacity(0.5),
+    return SizedBox.square(
+      dimension: imageSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedScale(
+            scale: _isHovered ? 1.1 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeInOut,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: _isHovered
+                    ? [
+                        BoxShadow(
+                          color: _primaryColor.withOpacity(0.4),
+                          blurRadius: 20,
+                          spreadRadius: 5,
+                        ),
+                      ]
+                    : [],
+              ),
+              child: AnimatedPokemonSprite(
+                key: ValueKey('card-art-${widget.pokemon.id}'),
+                animatedUrl: imageUrl,
+                staticUrl: staticFallback,
+                size: imageSize,
+                color: _primaryColor,
+              ),
+            ),
+          ),
+          if (animatedUrl != null)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 40,
+                height: 40,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: const Color(0xE6101726),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _primaryColor.withOpacity(0.8),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _primaryColor.withOpacity(0.38),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: AnimatedPokemonSprite(
+                  key: ValueKey('card-gif-${widget.pokemon.id}'),
+                  animatedUrl: animatedUrl,
+                  staticUrl: widget.pokemon.sprites.frontDefault,
+                  size: 34,
+                  color: _primaryColor,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

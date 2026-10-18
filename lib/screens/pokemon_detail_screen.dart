@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../models/pokemon_model.dart';
 import '../services/pokemon_service.dart';
+import '../services/audio_service.dart';
+import '../services/local_dex_store.dart';
 import '../widgets/pokemon_type_chip.dart';
 import '../widgets/stat_bar.dart';
 import '../widgets/pokeball_painter.dart';
+import '../widgets/sparkle_effect.dart';
+import '../widgets/animated_pokemon_sprite.dart';
+import '../widgets/pokemon_encyclopedia_sections.dart';
 
 /// Pantalla de detalle de un Pokémon individual
 class PokemonDetailScreen extends StatefulWidget {
@@ -19,16 +26,27 @@ class PokemonDetailScreen extends StatefulWidget {
 class _PokemonDetailScreenState extends State<PokemonDetailScreen>
     with TickerProviderStateMixin {
   final PokemonService _service = PokemonService();
+  final AudioService _audioService = AudioService();
+  final LocalDexStore _localStore = LocalDexStore();
   Pokemon? _pokemon;
   bool _isLoading = true;
   String? _error;
+  bool _isShiny = false;
+  bool _isLegendary = false;
+  bool _isMythical = false;
+  bool _isCaught = false;
+  bool _isTrackedShiny = false;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _springController;
+  late AnimationController _breathingController;
+  late AnimationController _flashController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   Animation<Offset>? _springAnimation;
+  late Animation<double> _breathingAnimation;
+  late Animation<double> _flashAnimation;
   Offset _pokemonOffset = Offset.zero;
 
   @override
@@ -48,13 +66,10 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
       parent: _fadeController,
       curve: Curves.easeIn,
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     _springController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -65,6 +80,25 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
         setState(() => _pokemonOffset = _springAnimation!.value);
       }
     });
+
+    // Breathing animation - hace que el Pokémon "respire"
+    _breathingController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    )..repeat(reverse: true);
+    _breathingAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+      CurvedAnimation(parent: _breathingController, curve: Curves.easeInOut),
+    );
+
+    // Flash animation - efecto de aparición estilo Pokébola
+    _flashController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _flashAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _flashController, curve: Curves.easeOut));
 
     _fetchPokemon();
   }
@@ -78,15 +112,16 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
     });
   }
 
+  void _triggerHaptic() {
+    HapticFeedback.lightImpact();
+  }
+
   void _onPanEnd(DragEndDetails _) {
     _springController.reset();
-    _springAnimation = Tween<Offset>(
-      begin: _pokemonOffset,
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _springController,
-      curve: Curves.elasticOut,
-    ));
+    _springAnimation = Tween<Offset>(begin: _pokemonOffset, end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _springController, curve: Curves.elasticOut),
+        );
     _springController.forward();
   }
 
@@ -97,18 +132,71 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
     });
 
     try {
-      final pokemon = await _service.getPokemon(widget.pokemonId.toString());
+      final pokemon = await _service.getPokemon(
+        widget.pokemonId.toString(),
+        includeMoves: true,
+      );
+      if (!mounted) return;
       setState(() {
         _pokemon = pokemon;
         _isLoading = false;
       });
+      _flashController.forward();
       _fadeController.forward();
       _slideController.forward();
+      _loadPokemonRarity(pokemon.speciesId);
+      _loadCollectionStatus(pokemon.id);
+      Future<void>.delayed(const Duration(milliseconds: 380), () {
+        if (!mounted) return;
+        _audioService.playPokemonCry(pokemon.id);
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadCollectionStatus(int pokemonId) async {
+    final results = await Future.wait([
+      _localStore.getCaughtIds(),
+      _localStore.getShinyIds(),
+    ]);
+    if (!mounted || _pokemon?.id != pokemonId) return;
+    setState(() {
+      _isCaught = results[0].contains(pokemonId);
+      _isTrackedShiny = results[1].contains(pokemonId);
+    });
+  }
+
+  Future<void> _toggleCaptured() async {
+    final pokemon = _pokemon;
+    if (pokemon == null) return;
+    final isCaught = await _localStore.toggleCaught(pokemon.id);
+    if (!mounted) return;
+    setState(() => _isCaught = isCaught);
+  }
+
+  Future<void> _toggleTrackedShiny() async {
+    final pokemon = _pokemon;
+    if (pokemon == null) return;
+    final isShiny = await _localStore.setShiny(pokemon.id, !_isTrackedShiny);
+    if (!mounted) return;
+    setState(() => _isTrackedShiny = isShiny);
+  }
+
+  Future<void> _loadPokemonRarity(int speciesId) async {
+    try {
+      final rarity = await _service.getPokemonRarity(speciesId);
+      if (!mounted) return;
+      setState(() {
+        _isLegendary = rarity['legendary'] ?? false;
+        _isMythical = rarity['mythical'] ?? false;
+      });
+    } catch (_) {
+      // The detail page stays usable if the optional rarity lookup fails.
     }
   }
 
@@ -117,6 +205,8 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
     _fadeController.dispose();
     _slideController.dispose();
     _springController.dispose();
+    _breathingController.dispose();
+    _flashController.dispose();
     super.dispose();
   }
 
@@ -155,10 +245,7 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
     final primaryType = _pokemon!.types.first.name;
     final typeColor = _getTypeColor(primaryType);
     return LinearGradient(
-      colors: [
-        typeColor.withOpacity(0.8),
-        const Color(0xFF0F0F1A),
-      ],
+      colors: [typeColor.withOpacity(0.8), const Color(0xFF0F0F1A)],
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
     );
@@ -168,16 +255,33 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F1A),
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 800),
-        decoration: BoxDecoration(gradient: _getBackgroundGradient()),
-        child: SafeArea(
-          child: _isLoading
-              ? _buildLoading()
-              : _error != null
+      body: Stack(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 800),
+            decoration: BoxDecoration(gradient: _getBackgroundGradient()),
+            child: SafeArea(
+              child: _isLoading
+                  ? _buildLoading()
+                  : _error != null
                   ? _buildError()
                   : _buildContent(),
-        ),
+            ),
+          ),
+          // Flash effect - poner encima pero sin bloquear interacción
+          if (!_isLoading && _error == null)
+            IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _flashAnimation,
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _flashAnimation.value,
+                    child: Container(color: Colors.white),
+                  );
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -191,10 +295,7 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
           const SizedBox(height: 28),
           Text(
             'Cargando Pokémon...',
-            style: GoogleFonts.outfit(
-              color: Colors.white70,
-              fontSize: 16,
-            ),
+            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 16),
           ),
         ],
       ),
@@ -221,12 +322,18 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B6B),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 14,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30),
                 ),
               ),
-              child: Text('Reintentar', style: GoogleFonts.outfit(fontSize: 16)),
+              child: Text(
+                'Reintentar',
+                style: GoogleFonts.outfit(fontSize: 16),
+              ),
             ),
           ],
         ),
@@ -254,10 +361,14 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: pokemon.types
-                          .map((t) => Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6),
-                                child: PokemonTypeChip(typeName: t.name),
-                              ))
+                          .map(
+                            (t) => Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: PokemonTypeChip(typeName: t.name),
+                            ),
+                          )
                           .toList(),
                     ),
                     const SizedBox(height: 24),
@@ -269,6 +380,8 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                     const SizedBox(height: 24),
                     // Habilidades
                     _buildAbilitiesCard(pokemon),
+                    const SizedBox(height: 18),
+                    PokemonEncyclopediaSections(pokemon: pokemon),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -281,8 +394,26 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
   }
 
   Widget _buildHeader(Pokemon pokemon) {
-    final imageUrl = pokemon.sprites.officialArtwork ?? pokemon.sprites.frontDefault;
+    final imageUrl = _isShiny
+        ? (pokemon.sprites.homeArtworkShiny ??
+              pokemon.sprites.officialArtworkShiny ??
+              pokemon.sprites.frontShiny ??
+              pokemon.sprites.homeArtwork ??
+              pokemon.sprites.officialArtwork ??
+              pokemon.sprites.frontDefault)
+        : (pokemon.sprites.homeArtwork ??
+              pokemon.sprites.officialArtwork ??
+              pokemon.sprites.frontDefault);
+    final animatedSpriteUrl = _isShiny
+        ? pokemon.sprites.animatedShiny ?? pokemon.sprites.animated
+        : pokemon.sprites.animated;
+    final animatedStaticFallback = _isShiny
+        ? pokemon.sprites.frontShiny ?? pokemon.sprites.frontDefault
+        : pokemon.sprites.frontDefault;
     final typeColor = _getTypeColor(pokemon.types.first.name);
+    final rarityColor = _isMythical
+        ? const Color(0xFFBE9BFF)
+        : const Color(0xFFFFD166);
     return Stack(
       children: [
         // Pokébola grande en la esquina superior derecha
@@ -291,19 +422,24 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
           right: -65,
           child: DecorativePokeball(
             size: 290,
-            color: Colors.white,
-            opacity: 0.06,
+            color: _isLegendary || _isMythical ? rarityColor : Colors.white,
+            opacity: _isLegendary || _isMythical ? 0.12 : 0.06,
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
           child: Column(
             children: [
-              // Botón atrás + número del Pokémon
+              // Botón atrás + número del Pokémon + navegación
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  // Botón atrás
                   GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: () {
+                      _triggerHaptic();
+                      Navigator.of(context).pop();
+                    },
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
@@ -317,7 +453,7 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  // Número del Pokémon
                   Text(
                     '#${pokemon.id.toString().padLeft(3, '0')}',
                     style: GoogleFonts.outfit(
@@ -325,6 +461,63 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
+                  ),
+                  // Navegación entre Pokémon
+                  Row(
+                    children: [
+                      if (pokemon.id > 1)
+                        GestureDetector(
+                          onTap: () {
+                            _triggerHaptic();
+                            _audioService.playPokeballOpen();
+                            Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                builder: (_) => PokemonDetailScreen(
+                                  pokemonId: pokemon.id - 1,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.chevron_left,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          _triggerHaptic();
+                          _audioService.playPokeballOpen();
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (_) => PokemonDetailScreen(
+                                pokemonId: pokemon.id + 1,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.chevron_right,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -338,6 +531,48 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                   letterSpacing: 1.5,
                 ),
               ),
+              if (_isLegendary || _isMythical) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: rarityColor.withOpacity(0.13),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: rarityColor.withOpacity(0.45)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: rarityColor.withOpacity(0.15),
+                        blurRadius: 16,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isMythical
+                            ? Icons.auto_awesome_rounded
+                            : Icons.workspace_premium_rounded,
+                        color: rarityColor,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        _isMythical ? 'POKÉMON MÍTICO' : 'POKÉMON LEGENDARIO',
+                        style: GoogleFonts.outfit(
+                          color: rarityColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               // Imagen arrastrable sobre Pokébola decorativa
               SizedBox(
@@ -351,47 +586,246 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                       color: typeColor,
                       opacity: 0.18,
                     ),
-                    // Pokémon arrastrable con efecto 3D
-                    if (imageUrl != null)
-                      GestureDetector(
-                        onPanUpdate: _onPanUpdate,
-                        onPanEnd: _onPanEnd,
-                        child: Transform(
-                          transform: Matrix4.identity()
-                            ..setEntry(3, 2, 0.001)
-                            ..translate(_pokemonOffset.dx, _pokemonOffset.dy)
-                            ..rotateY(_pokemonOffset.dx * 0.007)
-                            ..rotateX(-_pokemonOffset.dy * 0.007),
-                          alignment: FractionalOffset.center,
-                          child: Hero(
-                            tag: 'pokemon-${pokemon.id}',
-                            child: Image.network(
-                              imageUrl,
-                              height: 220,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => Icon(
-                                Icons.catching_pokemon,
-                                size: 120,
-                                color: typeColor.withOpacity(0.5),
-                              ),
+                    // Efecto shiny brillante + partículas
+                    if (_isShiny || _isLegendary || _isMythical)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                (_isShiny ? Colors.amber : rarityColor)
+                                    .withOpacity(0.3),
+                                Colors.transparent,
+                              ],
+                              stops: const [0.0, 1.0],
                             ),
                           ),
                         ),
                       ),
+                    // Pokémon arrastrable con efecto 3D y breathing
+                    if (imageUrl != null)
+                      AnimatedBuilder(
+                        animation: _breathingAnimation,
+                        builder: (context, child) {
+                          return GestureDetector(
+                            onTap: () {
+                              _triggerHaptic();
+                              _audioService.playPokemonCry(pokemon.id);
+                            },
+                            onPanUpdate: _onPanUpdate,
+                            onPanEnd: _onPanEnd,
+                            behavior: HitTestBehavior.translucent,
+                            child: Transform(
+                              transform: Matrix4.identity()
+                                ..setEntry(3, 2, 0.001)
+                                ..translate(
+                                  _pokemonOffset.dx,
+                                  _pokemonOffset.dy,
+                                )
+                                ..rotateY(_pokemonOffset.dx * 0.007)
+                                ..rotateX(-_pokemonOffset.dy * 0.007)
+                                ..scale(_breathingAnimation.value),
+                              alignment: FractionalOffset.center,
+                              child: Hero(
+                                tag: 'pokemon-${pokemon.id}',
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    // Partículas fuera del Hero para no interferir
+                                    if (_isShiny || _isLegendary || _isMythical)
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: SparkleEffect(
+                                            color: _isShiny
+                                                ? Colors.amber
+                                                : rarityColor,
+                                            particleCount: _isShiny ? 20 : 14,
+                                            child: const SizedBox.expand(),
+                                          ),
+                                        ),
+                                      ),
+                                    // Render HOME nítido con movimiento suave.
+                                    AnimatedPokemonSprite(
+                                      key: ValueKey(
+                                        'detail-art-${pokemon.id}-${_isShiny ? 'shiny' : 'normal'}',
+                                      ),
+                                      animatedUrl: imageUrl,
+                                      staticUrl: _isShiny
+                                          ? pokemon.sprites.frontShiny ??
+                                                pokemon
+                                                    .sprites
+                                                    .officialArtworkShiny ??
+                                                pokemon
+                                                    .sprites
+                                                    .officialArtwork ??
+                                                pokemon.sprites.frontDefault
+                                          : pokemon.sprites.frontDefault ??
+                                                pokemon.sprites.officialArtwork,
+                                      size: 280, // Más grande para mejor resolución
+                                      bobbingOffset: 8,
+                                      color: typeColor,
+                                    ),
+                                    if (animatedSpriteUrl != null)
+                                      Positioned(
+                                        right: 10,
+                                        bottom: 12,
+                                        child: IgnorePointer(
+                                          child: Container(
+                                            width: 78,
+                                            height: 78,
+                                            padding: const EdgeInsets.all(5),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xE6101726),
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: typeColor.withOpacity(
+                                                  0.8,
+                                                ),
+                                                width: 1.5,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: typeColor.withOpacity(
+                                                    0.4,
+                                                  ),
+                                                  blurRadius: 20,
+                                                  spreadRadius: 1,
+                                                ),
+                                              ],
+                                            ),
+                                            child: AnimatedPokemonSprite(
+                                              key: ValueKey(
+                                                'detail-gif-${pokemon.id}-${_isShiny ? 'shiny' : 'normal'}',
+                                              ),
+                                              animatedUrl: animatedSpriteUrl,
+                                              staticUrl: animatedStaticFallback,
+                                              size: 68,
+                                              bobbingOffset: 4,
+                                              color: typeColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
-              // Hint de arrastre
+              // Hint de arrastre + botón shiny
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.open_with, size: 13, color: Colors.white24),
                   const SizedBox(width: 4),
                   Text(
-                    'Arrástralo',
+                    'Arrástralo · tócalo para oírlo',
                     style: GoogleFonts.outfit(
                       color: Colors.white24,
                       fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  // Botón Shiny toggle
+                  GestureDetector(
+                    onTap: () {
+                      _triggerHaptic();
+                      setState(() => _isShiny = !_isShiny);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: _isShiny
+                            ? LinearGradient(
+                                colors: [
+                                  Colors.amber,
+                                  Colors.orange.shade400,
+                                  Colors.yellow.shade300,
+                                ],
+                              )
+                            : null,
+                        color: _isShiny ? null : Colors.white.withOpacity(0.12),
+                        border: _isShiny
+                            ? null
+                            : Border.all(color: Colors.white.withOpacity(0.2)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.auto_awesome,
+                            size: 14,
+                            color: _isShiny ? Colors.white : Colors.white38,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Shiny',
+                            style: GoogleFonts.outfit(
+                              color: _isShiny ? Colors.white : Colors.white38,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _toggleCaptured,
+                    icon: Icon(
+                      _isCaught ? Icons.check_circle : Icons.add_task_rounded,
+                      size: 16,
+                    ),
+                    label: Text(_isCaught ? 'Capturado' : 'Lo capturé'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _isCaught
+                          ? const Color(0xFF78D6A5)
+                          : Colors.white70,
+                      side: BorderSide(
+                        color: _isCaught
+                            ? const Color(0xFF78D6A5).withOpacity(0.55)
+                            : Colors.white24,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _toggleTrackedShiny,
+                    icon: Icon(
+                      _isTrackedShiny
+                          ? Icons.auto_awesome
+                          : Icons.auto_awesome_outlined,
+                      size: 16,
+                    ),
+                    label: Text(
+                      _isTrackedShiny ? 'Shiny guardado' : 'Guardar shiny',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _isTrackedShiny
+                          ? const Color(0xFFFFD166)
+                          : Colors.white70,
+                      side: BorderSide(
+                        color: _isTrackedShiny
+                            ? const Color(0xFFFFD166).withOpacity(0.55)
+                            : Colors.white24,
+                      ),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                 ],
@@ -455,10 +889,7 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
             ),
             Text(
               label,
-              style: GoogleFonts.outfit(
-                color: Colors.white54,
-                fontSize: 12,
-              ),
+              style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12),
             ),
           ],
         ),
@@ -543,8 +974,7 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                     Text(
                       ability.name
                           .split('-')
-                          .map((w) =>
-                              '${w[0].toUpperCase()}${w.substring(1)}')
+                          .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
                           .join(' '),
                       style: GoogleFonts.outfit(
                         color: Colors.white,
@@ -554,8 +984,11 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                     ),
                     if (ability.isHidden) ...[
                       const SizedBox(width: 6),
-                      const Icon(Icons.visibility_off,
-                          size: 14, color: Colors.purple),
+                      const Icon(
+                        Icons.visibility_off,
+                        size: 14,
+                        color: Colors.purple,
+                      ),
                     ],
                   ],
                 ),
@@ -566,8 +999,11 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
             const SizedBox(height: 10),
             Row(
               children: [
-                const Icon(Icons.visibility_off,
-                    size: 12, color: Colors.purple),
+                const Icon(
+                  Icons.visibility_off,
+                  size: 12,
+                  color: Colors.purple,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   'Habilidad oculta',

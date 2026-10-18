@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/pokemon_model.dart';
 
 /// Widget de tipo chip con el color correspondiente al tipo de Pokémon
 class PokemonTypeChip extends StatelessWidget {
