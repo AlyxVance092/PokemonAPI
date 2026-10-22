@@ -24,21 +24,26 @@ class _CollectionScreenState extends State<CollectionScreen>
   Set<int> _shinies = {};
   Map<String, dynamic> _hunt = {'count': 0, 'target': '', 'odds': 4096};
   bool _ready = false;
+  int _loadRequest = 0;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    _store.addListener(_onStoreChanged);
     _load();
   }
 
+  void _onStoreChanged() => _load();
+
   Future<void> _load() async {
+    final request = ++_loadRequest;
     final values = await Future.wait([
       _store.getCaughtIds(),
       _store.getShinyIds(),
       _store.getHuntSettings(),
     ]);
-    if (!mounted) return;
+    if (!mounted || request != _loadRequest) return;
     setState(() {
       _caught = values[0] as Set<int>;
       _shinies = values[1] as Set<int>;
@@ -73,6 +78,7 @@ class _CollectionScreenState extends State<CollectionScreen>
 
   @override
   void dispose() {
+    _store.removeListener(_onStoreChanged);
     _tabs.dispose();
     super.dispose();
   }

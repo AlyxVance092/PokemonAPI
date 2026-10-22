@@ -1,9 +1,15 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Datos personales que siempre deben estar disponibles sin conexión.
-class LocalDexStore {
+class LocalDexStore extends ChangeNotifier {
+  LocalDexStore._();
+
+  static final LocalDexStore _instance = LocalDexStore._();
+  factory LocalDexStore() => _instance;
+
   static final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
   static const _caughtKey = 'dex_caught_ids';
@@ -19,6 +25,7 @@ class LocalDexStore {
     final ids = await _readIds(_caughtKey);
     if (!ids.add(pokemonId)) ids.remove(pokemonId);
     await _writeIds(_caughtKey, ids);
+    notifyListeners();
     return ids.contains(pokemonId);
   }
 
@@ -30,6 +37,7 @@ class LocalDexStore {
       ids.remove(pokemonId);
     }
     await _writeIds(_caughtKey, ids);
+    notifyListeners();
     return isCaught;
   }
 
@@ -41,6 +49,7 @@ class LocalDexStore {
       ids.remove(pokemonId);
     }
     await _writeIds(_shinyKey, ids);
+    notifyListeners();
     return isShiny;
   }
 
@@ -73,6 +82,7 @@ class LocalDexStore {
 
   Future<void> saveHuntSettings(Map<String, dynamic> settings) async {
     await _preferences.setString(_huntKey, jsonEncode(settings));
+    notifyListeners();
   }
 
   Future<Set<int>> _readIds(String key) async {

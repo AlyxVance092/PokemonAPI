@@ -393,6 +393,66 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
     );
   }
 
+  void _showAnimatedSprite(
+    Pokemon pokemon, {
+    required String animatedUrl,
+    required String? staticFallback,
+    required Color typeColor,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: const Color(0xFF171C2B),
+        insetPadding: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                pokemon.name.toUpperCase(),
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Sprite animado · #${pokemon.id.toString().padLeft(3, '0')}',
+                style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              AnimatedPokemonSprite(
+                key: ValueKey('detail-dialog-sprite-${pokemon.id}-$_isShiny'),
+                animatedUrl: animatedUrl,
+                staticUrl: staticFallback,
+                size: 210,
+                bobbingOffset: 6,
+                color: typeColor,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 7,
+                children: pokemon.types
+                    .map((type) => PokemonTypeChip.small(type.name))
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('Cerrar'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader(Pokemon pokemon) {
     final imageUrl = _isShiny
         ? (pokemon.sprites.homeArtworkShiny ??
@@ -670,39 +730,72 @@ class _PokemonDetailScreenState extends State<PokemonDetailScreen>
                                       Positioned(
                                         right: 10,
                                         bottom: 12,
-                                        child: IgnorePointer(
-                                          child: Container(
-                                            width: 78,
-                                            height: 78,
-                                            padding: const EdgeInsets.all(5),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xE6101726),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                color: typeColor.withOpacity(
-                                                  0.8,
-                                                ),
-                                                width: 1.5,
+                                        child: Tooltip(
+                                          message: 'Ver animación ampliada',
+                                          child: Material(
+                                            color: Colors.transparent,
+                                            shape: const CircleBorder(),
+                                            child: InkWell(
+                                              customBorder:
+                                                  const CircleBorder(),
+                                              onTap: () => _showAnimatedSprite(
+                                                pokemon,
+                                                animatedUrl: animatedSpriteUrl,
+                                                staticFallback:
+                                                    animatedStaticFallback,
+                                                typeColor: typeColor,
                                               ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: typeColor.withOpacity(
-                                                    0.4,
+                                              child: Container(
+                                                width: 78,
+                                                height: 78,
+                                                padding: const EdgeInsets.all(
+                                                  5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xE6101726,
                                                   ),
-                                                  blurRadius: 20,
-                                                  spreadRadius: 1,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: typeColor
+                                                        .withOpacity(0.8),
+                                                    width: 1.5,
+                                                  ),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: typeColor
+                                                          .withOpacity(0.4),
+                                                      blurRadius: 20,
+                                                      spreadRadius: 1,
+                                                    ),
+                                                  ],
                                                 ),
-                                              ],
-                                            ),
-                                            child: AnimatedPokemonSprite(
-                                              key: ValueKey(
-                                                'detail-gif-${pokemon.id}-${_isShiny ? 'shiny' : 'normal'}',
+                                                child: Stack(
+                                                  children: [
+                                                    AnimatedPokemonSprite(
+                                                      key: ValueKey(
+                                                        'detail-gif-${pokemon.id}-${_isShiny ? 'shiny' : 'normal'}',
+                                                      ),
+                                                      animatedUrl:
+                                                          animatedSpriteUrl,
+                                                      staticUrl:
+                                                          animatedStaticFallback,
+                                                      size: 68,
+                                                      bobbingOffset: 4,
+                                                      color: typeColor,
+                                                    ),
+                                                    const Positioned(
+                                                      right: 0,
+                                                      bottom: 0,
+                                                      child: Icon(
+                                                        Icons.play_arrow_rounded,
+                                                        color: Colors.white70,
+                                                        size: 16,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
-                                              animatedUrl: animatedSpriteUrl,
-                                              staticUrl: animatedStaticFallback,
-                                              size: 68,
-                                              bobbingOffset: 4,
-                                              color: typeColor,
                                             ),
                                           ),
                                         ),

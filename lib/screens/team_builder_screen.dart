@@ -79,12 +79,20 @@ class _TeamBuilderScreenState extends State<TeamBuilderScreen> {
   }
 
   Future<void> _persist({bool refreshAnalysis = true}) async {
-    await _store.saveTeams(_teams);
     if (!mounted) return;
     if (refreshAnalysis && _team != null) {
       setState(() => _analysisFuture = _analyse(_team!));
     } else {
       setState(() {});
+    }
+    try {
+      await _store.saveTeams(_teams);
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+          'El cambio se aplicó, pero no se pudo guardar en el teléfono.',
+        );
+      }
     }
   }
 
@@ -524,6 +532,8 @@ class _TeamMemberCard extends StatefulWidget {
 }
 
 class _TeamMemberCardState extends State<_TeamMemberCard> {
+  bool _expanded = false;
+
   late final Future<Pokemon> _pokemon = PokemonService().getPokemon(
     '${widget.id}',
     includeMoves: true,
@@ -548,83 +558,142 @@ class _TeamMemberCardState extends State<_TeamMemberCard> {
               borderRadius: BorderRadius.circular(18),
             ),
             clipBehavior: Clip.antiAlias,
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-              childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              leading: SizedBox(
-                width: 54,
-                height: 54,
-                child:
-                    pokemon?.sprites.homeArtwork == null &&
-                        pokemon?.sprites.officialArtwork == null
-                    ? const Icon(Icons.catching_pokemon, color: Colors.white38)
-                    : AnimatedPokemonSprite(
-                        key: ValueKey('team-sprite-${widget.id}'),
-                        animatedUrl:
-                            pokemon?.sprites.homeArtwork ??
-                            pokemon?.sprites.officialArtwork,
-                        staticUrl: pokemon?.sprites.frontDefault,
-                        size: 54,
-                      ),
-              ),
-              title: Text(
-                pokemon?.name ?? 'Cargando #${widget.id}',
-                style: GoogleFonts.outfit(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              subtitle: Text(
-                pokemon?.types.map((type) => type.name).join(' / ') ??
-                    'Modo sin conexión: usa el dato guardado',
-                style: GoogleFonts.outfit(color: Colors.white54, fontSize: 11),
-              ),
-              trailing: IconButton(
-                tooltip: 'Quitar del equipo',
-                onPressed: widget.onRemove,
-                icon: const Icon(Icons.close_rounded, color: Colors.white54),
-              ),
+            child: Column(
               children: [
-                if (pokemon == null)
-                  const Text(
-                    'No se pudo leer el conjunto de movimientos sin conexión.',
-                  )
-                else if (pokemon.moves.isEmpty)
-                  const Text('No hay movimientos guardados para este Pokémon.')
-                else ...[
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Movimientos (elige hasta 4)',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => _expanded = !_expanded),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 54,
+                                height: 54,
+                                child:
+                                    pokemon?.sprites.homeArtwork == null &&
+                                        pokemon?.sprites.officialArtwork == null
+                                    ? const Icon(
+                                        Icons.catching_pokemon,
+                                        color: Colors.white38,
+                                      )
+                                    : AnimatedPokemonSprite(
+                                        key: ValueKey(
+                                          'team-sprite-${widget.id}',
+                                        ),
+                                        animatedUrl:
+                                            pokemon?.sprites.homeArtwork ??
+                                            pokemon?.sprites.officialArtwork,
+                                        staticUrl:
+                                            pokemon?.sprites.frontDefault,
+                                        size: 54,
+                                      ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      pokemon?.name ?? 'Cargando #${widget.id}',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Text(
+                                      pokemon?.types
+                                              .map((type) => type.name)
+                                              .join(' / ') ??
+                                          'Modo sin conexión',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white54,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                _expanded
+                                    ? Icons.expand_less_rounded
+                                    : Icons.expand_more_rounded,
+                                color: Colors.white54,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
+                    IconButton(
+                      tooltip: 'Eliminar del equipo',
+                      onPressed: widget.onRemove,
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: Color(0xFFFF8585),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                ),
+                if (_expanded)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                    child: pokemon == null
+                        ? const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'No se pudieron cargar sus movimientos.',
+                            ),
+                          )
+                        : pokemon.moves.isEmpty
+                        ? const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('No hay movimientos disponibles.'),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Movimientos (elige hasta 4)',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 1,
+                                children: pokemon.moves.take(30).map((move) {
+                                  final selected = widget.selectedMoves
+                                      .contains(move.name);
+                                  return FilterChip(
+                                    label: Text(move.name.replaceAll('-', ' ')),
+                                    selected: selected,
+                                    onSelected: (_) =>
+                                        widget.onMoveChanged(move.name),
+                                    selectedColor: const Color(0xFF7660D8),
+                                    checkmarkColor: Colors.white,
+                                    labelStyle: TextStyle(
+                                      color: selected
+                                          ? Colors.white
+                                          : Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                    backgroundColor: Colors.white.withOpacity(
+                                      0.05,
+                                    ),
+                                    side: BorderSide.none,
+                                    visualDensity: VisualDensity.compact,
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 1,
-                    children: pokemon.moves.take(30).map((move) {
-                      final selected = widget.selectedMoves.contains(move.name);
-                      return FilterChip(
-                        label: Text(move.name.replaceAll('-', ' ')),
-                        selected: selected,
-                        onSelected: (_) => widget.onMoveChanged(move.name),
-                        selectedColor: const Color(0xFF7660D8),
-                        checkmarkColor: Colors.white,
-                        labelStyle: TextStyle(
-                          color: selected ? Colors.white : Colors.white70,
-                          fontSize: 11,
-                        ),
-                        backgroundColor: Colors.white.withOpacity(0.05),
-                        side: BorderSide.none,
-                        visualDensity: VisualDensity.compact,
-                      );
-                    }).toList(),
-                  ),
-                ],
               ],
             ),
           ),
